@@ -1,0 +1,36 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/todo-app-proje/todo-app:$COMMIT_SHA', '-t', 'gcr.io/todo-app-proje/todo-app:latest', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/todo-app-proje/todo-app:$COMMIT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/todo-app-proje/todo-app:latest']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+    - 'container'
+    - 'clusters'
+    - 'get-credentials'
+    - 'todo-cluster'
+    - '--zone'
+    - 'us-central1-a'
+    - '--project'
+    - 'todo-app-proje'
+
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args: ['set', 'image', 'deployment/todo-app', 'todo-app=gcr.io/todo-app-proje/todo-app:$COMMIT_SHA', '-n', 'todo-app']
+    env:
+    - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+    - 'CLOUDSDK_CONTAINER_CLUSTER=todo-cluster'
+
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args: ['rollout', 'status', 'deployment/todo-app', '-n', 'todo-app']
+    env:
+    - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
+    - 'CLOUDSDK_CONTAINER_CLUSTER=todo-cluster'
+
+images:
+  - 'gcr.io/todo-app-proje/todo-app:$COMMIT_SHA'
+  - 'gcr.io/todo-app-proje/todo-app:latest'
