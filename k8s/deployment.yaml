@@ -4,7 +4,7 @@ metadata:
   name: todo-app
   namespace: todo-app
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: todo-app
@@ -25,8 +25,18 @@ spec:
         ports:
         - containerPort: 8080
         env:
-        - name: DB_PATH
-          value: "/data/todo.db"
+        - name: DB_HOST
+          value: "todo-db-service"
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: todo-db-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: todo-db-secret
+              key: MYSQL_DATABASE
         resources:
           requests:
             cpu: "100m"
@@ -34,10 +44,3 @@ spec:
           limits:
             cpu: "500m"
             memory: "256Mi"
-        volumeMounts:
-        - name: todo-data
-          mountPath: /data
-      volumes:
-      - name: todo-data
-        persistentVolumeClaim:
-          claimName: todo-pvc

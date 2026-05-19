@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-import sqlite3
+import pymysql
 import hashlib
 import os
 from datetime import datetime
@@ -7,41 +7,46 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = "todo-app-gizli-anahtar"
 
-# Veritabanı yolu
-db_path = os.environ.get('DB_PATH', 'todo.db')
+# MySQL bağlantı ayarları
+DB_HOST = os.environ.get('DB_HOST', 'todo-db-service')
+DB_USER = 'root'
+DB_PASSWORD = os.environ.get('MYSQL_ROOT_PASSWORD', 'todo123')
+DB_NAME = os.environ.get('MYSQL_DATABASE', 'tododb')
 
 def get_db():
-    """Veritabanı bağlantısı oluştur"""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        cursorclass=pymysql.cursors.DictCursor
+    )
 
 def init_db():
-    """Tabloları oluştur"""
     conn = get_db()
     cursor = conn.cursor()
     
-    # Kullanıcılar tablosu (username eklendi)
+    # Users tablosu
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            username VARCHAR(255) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
-    # Todo görevleri tablosu
+    # Todos tablosu
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS todos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            title VARCHAR(255) NOT NULL,
             description TEXT,
             completed BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
@@ -50,13 +55,10 @@ def init_db():
     conn.close()
 
 def hash_password(password):
-    """Şifreyi hash'le"""
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Veritabanını başlat
+# Tabloları oluştur
 init_db()
-
-# ========== ROUTES ==========
 
 @app.route('/')
 def landing():
@@ -76,36 +78,28 @@ def register():
         conn = get_db()
         cursor = conn.cursor()
         
-        # Kullanıcı adı kontrolü
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-        existing_username = cursor.fetchone()
-        if existing_username:
+        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+        if cursor.fetchone():
             conn.close()
             return "Bu kullanıcı adı zaten alınmış!", 400
         
-        # E-posta kontrolü
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-        existing_email = cursor.fetchone()
-        
-        if existing_email:
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        if cursor.fetchone():
             conn.close()
             return "Bu e-posta zaten kayıtlı!", 400
         
-        # Yeni kullanıcı ekle
         hashed = hash_password(password)
-        cursor.execute("INSERT INTO users (email, username, password) VALUES (?, ?, ?)", 
+        cursor.execute("INSERT INTO users (email, username, password) VALUES (%s, %s, %s)", 
                       (email, username, hashed))
         conn.commit()
         
-        # Yeni kullanıcının ID'sini al
-        user_id = cursor.lastrowid
+        cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+        user = cursor.fetchone()
         conn.close()
         
-        # Otomatik giriş yap
-        session['user_id'] = user_id
-        session['user_email'] = email
-        session['username'] = username
-        
+        session['user_id'] = user['id']
+        session['user_email'] = user['email']
+        session['username'] = user['username']
         return redirect(url_for('dashboard'))
     
     return render_template('register.html')
@@ -118,7 +112,7 @@ def login():
         
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
         conn.close()
         
@@ -128,7 +122,6 @@ def login():
         session['user_id'] = user['id']
         session['user_email'] = user['email']
         session['username'] = user['username']
-        
         return redirect(url_for('dashboard'))
     
     return render_template('login.html')
@@ -149,23 +142,14 @@ def dashboard():
     cursor = conn.cursor()
     
     if filter_type == 'active':
-        cursor.execute("""
-            SELECT * FROM todos 
-            WHERE user_id = ? AND completed = 0 
-            ORDER BY created_at DESC
-        """, (session['user_id'],))
+        cursor.execute("SELECT * FROM todos WHERE user_id = %s AND completed = 0 ORDER BY created_at DESC", 
+                      (session['user_id'],))
     elif filter_type == 'completed':
-        cursor.execute("""
-            SELECT * FROM todos 
-            WHERE user_id = ? AND completed = 1 
-            ORDER BY created_at DESC
-        """, (session['user_id'],))
+        cursor.execute("SELECT * FROM todos WHERE user_id = %s AND completed = 1 ORDER BY created_at DESC", 
+                      (session['user_id'],))
     else:
-        cursor.execute("""
-            SELECT * FROM todos 
-            WHERE user_id = ? 
-            ORDER BY created_at DESC
-        """, (session['user_id'],))
+        cursor.execute("SELECT * FROM todos WHERE user_id = %s ORDER BY created_at DESC", 
+                      (session['user_id'],))
     
     todos = cursor.fetchall()
     conn.close()
@@ -185,10 +169,8 @@ def add_todo():
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO todos (user_id, title, description)
-        VALUES (?, ?, ?)
-    """, (session['user_id'], title, description))
+    cursor.execute("INSERT INTO todos (user_id, title, description) VALUES (%s, %s, %s)",
+                  (session['user_id'], title, description))
     conn.commit()
     conn.close()
     
@@ -201,11 +183,8 @@ def toggle_todo(todo_id):
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE todos 
-        SET completed = NOT completed, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND user_id = ?
-    """, (todo_id, session['user_id']))
+    cursor.execute("UPDATE todos SET completed = NOT completed WHERE id = %s AND user_id = %s",
+                  (todo_id, session['user_id']))
     conn.commit()
     conn.close()
     
@@ -218,7 +197,8 @@ def delete_todo(todo_id):
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM todos WHERE id = ? AND user_id = ?", (todo_id, session['user_id']))
+    cursor.execute("DELETE FROM todos WHERE id = %s AND user_id = %s",
+                  (todo_id, session['user_id']))
     conn.commit()
     conn.close()
     
@@ -234,11 +214,8 @@ def edit_todo(todo_id):
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE todos 
-        SET title = ?, description = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND user_id = ?
-    """, (title, description, todo_id, session['user_id']))
+    cursor.execute("UPDATE todos SET title = %s, description = %s WHERE id = %s AND user_id = %s",
+                  (title, description, todo_id, session['user_id']))
     conn.commit()
     conn.close()
     
@@ -256,7 +233,8 @@ def profile():
         
         if action == 'update_email':
             new_email = request.form.get('email')
-            cursor.execute("UPDATE users SET email = ? WHERE id = ?", (new_email, session['user_id']))
+            cursor.execute("UPDATE users SET email = %s WHERE id = %s", 
+                          (new_email, session['user_id']))
             session['user_email'] = new_email
             conn.commit()
         
@@ -265,17 +243,19 @@ def profile():
             new_pass = request.form.get('new_password')
             confirm = request.form.get('confirm_password')
             
-            cursor.execute("SELECT * FROM users WHERE id = ?", (session['user_id'],))
+            cursor.execute("SELECT * FROM users WHERE id = %s", (session['user_id'],))
             user = cursor.fetchone()
             
             if user['password'] != hash_password(current):
                 conn.close()
                 return "Mevcut şifre yanlış!", 400
+            
             if new_pass != confirm:
                 conn.close()
                 return "Yeni şifreler eşleşmiyor!", 400
             
-            cursor.execute("UPDATE users SET password = ? WHERE id = ?", (hash_password(new_pass), session['user_id']))
+            cursor.execute("UPDATE users SET password = %s WHERE id = %s",
+                          (hash_password(new_pass), session['user_id']))
             conn.commit()
         
         conn.close()
@@ -283,16 +263,15 @@ def profile():
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT email, username, created_at FROM users WHERE id = ?", (session['user_id'],))
+    cursor.execute("SELECT email, username, created_at FROM users WHERE id = %s", (session['user_id'],))
     user = cursor.fetchone()
     
-    # Toplam tamamlanan görev sayısı
-    cursor.execute("SELECT COUNT(*) as completed FROM todos WHERE user_id = ? AND completed = 1", (session['user_id'],))
+    cursor.execute("SELECT COUNT(*) as completed FROM todos WHERE user_id = %s AND completed = 1", 
+                  (session['user_id'],))
     completed = cursor.fetchone()
-    
     conn.close()
     
     return render_template('profile.html', user=user, completed_count=completed['completed'])
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    app.run(host='0.0.0.0', port=5000, debug=True)

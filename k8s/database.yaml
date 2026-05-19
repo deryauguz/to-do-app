@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-db-service
+  namespace: todo-app
+spec:
+  type: ClusterIP
+  selector:
+    app: todo-mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: todo-db-stateful
+  namespace: todo-app
+spec:
+  serviceName: "todo-db-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-mysql
+  template:
+    metadata:
+      labels:
+        app: todo-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: todo-db-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: todo-db-secret
+                  key: MYSQL_DATABASE
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: db-storage
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: db-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
