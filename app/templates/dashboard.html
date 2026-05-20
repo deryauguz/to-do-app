@@ -48,7 +48,7 @@
                         {% if todo.description %}
                         <div class="todo-description">{{ todo.description }}</div>
                         {% endif %}
-                        <div class="todo-date">{{ todo.created_at[:16] }}</div>
+                        <div class="todo-date">{{ todo.created_at.strftime("%Y-%m-%d %H:%M") }}</div>
                     </div>
                 </div>
                 <div class="todo-actions">
