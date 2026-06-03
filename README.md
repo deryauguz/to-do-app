@@ -1,6 +1,6 @@
 # To-Do List Web Uygulaması - Bulut Bilişim Final Projesi
 
-Öğrenci Adı: Esma Derya Uğuz  
+Öğrenci Adı: Esma Derya Uğuz, Sümeyye Çakır  
 Ders: Bulut Bilişim  
 Teslim Tarihi: 3 Haziran 2026  
 
