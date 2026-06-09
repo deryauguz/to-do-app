@@ -1,16 +1,13 @@
 steps:
-  # 1. Docker imajını build et
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/todo-app-proje/todo-app:$COMMIT_SHA', '-t', 'gcr.io/todo-app-proje/todo-app:latest', '.']
 
-  # 2. Imajı push et
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/todo-app-proje/todo-app:$COMMIT_SHA']
 
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/todo-app-proje/todo-app:latest']
 
-  # 3. GKE cluster'a bağlan
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
     - 'container'
@@ -22,22 +19,17 @@ steps:
     - '--project'
     - 'todo-app-proje'
 
-  # 4. Deployment'ı güncelle
   - name: 'gcr.io/cloud-builders/kubectl'
     args: ['set', 'image', 'deployment/todo-app', 'todo-app=gcr.io/todo-app-proje/todo-app:$COMMIT_SHA', '-n', 'todo-app']
     env:
     - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
     - 'CLOUDSDK_CONTAINER_CLUSTER=todo-cluster'
 
-  # 5. Rollout durumunu kontrol et
   - name: 'gcr.io/cloud-builders/kubectl'
-    args: ['rollout', 'status', 'deployment/todo-app', '-n', 'todo-app', '--timeout=5m']
+    args: ['rollout', 'status', 'deployment/todo-app', '-n', 'todo-app']
     env:
     - 'CLOUDSDK_COMPUTE_ZONE=us-central1-a'
     - 'CLOUDSDK_CONTAINER_CLUSTER=todo-cluster'
-
-options:
-  logging: CLOUD_LOGGING_ONLY
 
 images:
   - 'gcr.io/todo-app-proje/todo-app:$COMMIT_SHA'
